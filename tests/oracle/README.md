@@ -11,9 +11,11 @@ record.
 
 ## The committed fixtures
 
-`go-ntfs.tsv` and `dfvfs.tsv` are dfir_ntfs's reading of
-`../fixtures/go-ntfs/LogFile.gz` and `../fixtures/dfvfs/LogFile.gz`. To
-rebuild them and check the fixtures against the upstream images, on Debian:
+`go-ntfs.tsv`, `dfvfs.tsv` and `museum-win11.tsv` are dfir_ntfs's reading of
+`../fixtures/go-ntfs/LogFile.gz`, `../fixtures/dfvfs/LogFile.gz` and
+`../fixtures/museum-win11/LogFile.gz` (the first 1 MiB of a Windows 11 log from
+the DFIR Artifact Museum). To rebuild them and check the fixtures against their
+sources, on Debian:
 
 ```sh
 apt-get install sleuthkit curl python3-venv git
@@ -41,3 +43,10 @@ for log in dfir_ntfs_src/test_data/LogFile_*.bin; do
 done
 NTFSLOG_ORACLE_DIR=$PWD/logs cargo test --test oracle -- --ignored --nocapture
 ```
+
+The same runner reads any other logs put in `NTFSLOG_ORACLE_DIR` with their
+`.tsv`, such as the DFIR Artifact Museum's six whole logs (Windows Server 2012
+R2, 2022, Windows 10 and 11, under `Windows/NTFSArtifacts/LogFile/`). It sorts
+the differences into targets dfir_ntfs doesn't name (records before the one
+that opened their attribute, or in a stretch of the log without one) and the
+rest.

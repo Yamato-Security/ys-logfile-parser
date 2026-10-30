@@ -23,6 +23,9 @@ First version of Yamato Security's fork, based on sootmark-ntfslog 0.1.0 (Sootma
   their offset in it, for recovering records the journal no longer has. (@YamatoSecurity)
 - `LogRecord::transaction_first_lsn`: the first record of each record's transaction, by following
   previous LSNs. (@YamatoSecurity)
+- Tests on a real Windows 11 log (the first 1 MiB of the DFIR Artifact Museum's RathbunVM
+  `$LogFile`, MIT) against dfir_ntfs's reading of it, and damage property tests on it.
+  (@YamatoSecurity)
 
 ### Changed
 - The crate is named after its repository, `ys-logfile-parser` (its library is still `ntfslog`:

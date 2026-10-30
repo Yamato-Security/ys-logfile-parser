@@ -61,18 +61,24 @@
 //!
 //! Operations on MFT file records name their record by its place in
 //! `$MFT`: record number = (VCN × cluster size + block offset × 512) /
-//! record size. Operations on non-resident attributes name an entry of the
-//! open attribute table, which the log rebuilds from its
-//! `OpenNonresidentAttribute` records and its checkpoints' table copies.
+//! record size. Every update's target attribute is an entry of the open
+//! attribute table, which the log rebuilds from its
+//! `OpenNonresidentAttribute` records and its checkpoints' table copies. A
+//! mount starts a new table: an update uses the entry defined in its own
+//! stretch of the log, the newest at or before it, else the oldest after
+//! it (an attribute opened before the oldest record that survives).
 //!
 //! # What is decoded
 //!
 //! Each [`Update`] has its operations, data, target and the MFT record
-//! number where it can be worked out, and what its data says about files:
-//! [`FileName`]s from new file records, new attributes and directory index
-//! entries added (its redo data), or deleted (its undo data); and
-//! [`StandardTimes`] written over `$STANDARD_INFORMATION`, new (redo) and
-//! old (undo).
+//! number where it can be worked out, and what its data is
+//! ([`Decoded`]): a [`FileRecord`] (a new one whole, or the header of one
+//! freed), an [`Attribute`] record, an [`IndexEntry`], or the
+//! [`DuplicatedInformation`] a directory entry keeps. In short, what it says
+//! about files: [`FileName`]s given (its redo data) or taken away (its undo
+//! data), and [`StandardTimes`] written over `$STANDARD_INFORMATION`, new
+//! (redo) and old (undo). [`Update::journal_write`] gives the USN records an
+//! update writes to the change journal, with their offset in it.
 
 mod attributes;
 mod bytes;

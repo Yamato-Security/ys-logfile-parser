@@ -1,6 +1,6 @@
 #!/bin/sh
 # Rebuilds the oracle files in this directory, and checks the fixtures, from
-# the upstream test images (Apache-2.0). Runs on Debian with
+# the upstream test images (Apache-2.0) and the DFIR Artifact Museum (MIT). Runs on Debian with
 #   apt-get install sleuthkit curl python3-venv git
 # and dfir_ntfs (GPL-3.0, run as an oracle only) in a virtual environment:
 #   python3 -m venv venv
@@ -11,6 +11,7 @@ set -eu
 
 GO_NTFS_COMMIT=20cc4d33923d64fcb39c03438568ddfa26bf416b
 DFVFS_COMMIT=917cefc9426d6ded2687d2b55164ded25b44fcb7
+MUSEUM_COMMIT=7d16ff39c9efc0ddd7307fcb3d30ff5c6e8d99f3
 PYTHON=${PYTHON:-python3}
 here=$(cd "$(dirname "$0")" && pwd)
 fixtures="$here/../fixtures"
@@ -31,3 +32,10 @@ for source in go-ntfs dfvfs; do
     gzip -dc "$fixtures/$source/MFT.gz" | cmp - "$work/$source.MFT"
     "$PYTHON" -I "$here/dump.py" "$work/$source.LogFile" > "$here/$source.tsv"
 done
+
+# The Museum's Windows 11 log: its first 1 MiB.
+curl -fsSL -o "$work/museum-win11.full" \
+    "https://raw.githubusercontent.com/AndrewRathbun/DFIRArtifactMuseum/$MUSEUM_COMMIT/Windows/NTFSArtifacts/LogFile/Win11/RathbunVM/%24LogFile"
+head -c 1048576 "$work/museum-win11.full" > "$work/museum-win11.LogFile"
+gzip -dc "$fixtures/museum-win11/LogFile.gz" | cmp - "$work/museum-win11.LogFile"
+"$PYTHON" -I "$here/dump.py" "$work/museum-win11.LogFile" > "$here/museum-win11.tsv"
