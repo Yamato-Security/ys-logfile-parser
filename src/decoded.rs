@@ -287,11 +287,14 @@ fn file_record(image: &[u8]) -> Option<FileRecord> {
         if kind == END_OF_ATTRIBUTES || length < ATTRIBUTE_HEADER || !length.is_multiple_of(8) {
             break;
         }
-        let Some(record) = image.get(at..at + length) else {
+        let Some(end) = at.checked_add(length) else {
+            break;
+        };
+        let Some(record) = image.get(at..end) else {
             break;
         };
         attributes.extend(attribute(record));
-        at += length;
+        at = end;
     }
     let mut record = FileRecord {
         number,
@@ -384,15 +387,23 @@ pub(crate) fn standard_information(value: &[u8]) -> Option<StandardInformation> 
 /// An index entry, with its key decoded as a `$FILE_NAME` when it is one.
 fn index_entry(entry: &[u8]) -> Option<IndexEntry> {
     let reference = Reference::new(u64_at(entry, 0)?);
+    let length = usize::from(u16_at(entry, 0x08)?);
     let key_length = u16_at(entry, 0x0A)?;
     let flags = u16_at(entry, 0x0C)?;
-    let file_name = (usize::from(key_length) >= FILE_NAME_HEADER)
-        .then(|| {
-            let key =
-                entry.get(INDEX_ENTRY_HEADER..INDEX_ENTRY_HEADER + usize::from(key_length))?;
-            file_name(key, Some(reference))
-        })
-        .flatten();
+    if length < INDEX_ENTRY_HEADER || !length.is_multiple_of(8) {
+        return None;
+    }
+    // A child VCN is the final eight bytes, outside the key. A final sentinel entry has no
+    // filename key. Do not consume padding or bytes from the next entry, even if available.
+    let key_end = INDEX_ENTRY_HEADER + usize::from(key_length);
+    let key_limit = length.checked_sub(if flags & 1 != 0 { 8 } else { 0 })?;
+    let file_name =
+        (flags & 2 == 0 && usize::from(key_length) >= FILE_NAME_HEADER && key_end <= key_limit)
+            .then(|| {
+                let key = entry.get(INDEX_ENTRY_HEADER..key_end)?;
+                file_name(key, Some(reference))
+            })
+            .flatten();
     Some(IndexEntry {
         flags,
         key_length,
@@ -505,5 +516,24 @@ mod tests {
             panic!("not decoded");
         };
         assert_eq!((entry.key_length, entry.file_name), (4, None));
+    }
+
+    #[test]
+    fn index_entries_respect_child_pointer_and_sentinel_boundaries() {
+        let mut entry = vec![0; 0x70];
+        entry[8..10].copy_from_slice(&0x60_u16.to_le_bytes());
+        entry[10..12].copy_from_slice(&0x48_u16.to_le_bytes());
+        // A complete one-character FILE_NAME key, ending at 0x58.
+        entry[0x50] = 1;
+        entry[0x52..0x54].copy_from_slice(&u16::from(b'a').to_le_bytes());
+        assert!(index_entry(&entry).unwrap().file_name.is_some());
+        // Reserving the final child VCN at 0x50 puts part of the key outside the entry.
+        entry[8..10].copy_from_slice(&0x58_u16.to_le_bytes());
+        entry[12..14].copy_from_slice(&1_u16.to_le_bytes());
+        assert!(index_entry(&entry).unwrap().file_name.is_none());
+        entry[12..14].copy_from_slice(&2_u16.to_le_bytes());
+        assert!(index_entry(&entry).unwrap().file_name.is_none());
+        entry[8..10].copy_from_slice(&0x08_u16.to_le_bytes());
+        assert!(index_entry(&entry).is_none());
     }
 }

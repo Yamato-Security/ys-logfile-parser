@@ -55,14 +55,17 @@ pub(crate) fn complete(
     page_size: u64,
     options: &Options,
 ) {
+    // Resolve the target before interpreting index keys: a view index may have a long key that
+    // happens to resemble a directory's $FILE_NAME value.
+    attributes::resolve(records, page_size);
     for record in records.iter_mut() {
         let Body::Update(update) = &mut record.body else {
             continue;
         };
         let record_size = record_size(update, options);
         locate(update, u64::from(cluster_size), record_size);
-        update.redo_decoded = decoded::decode(update.redo, &update.redo_data);
-        update.undo_decoded = decoded::decode(update.undo, &update.undo_data);
+        update.redo_decoded = decode_side(update.redo, &update.redo_data, update.target.as_ref());
+        update.undo_decoded = decode_side(update.undo, &update.undo_data, update.target.as_ref());
         let redo = content(
             update.redo,
             &update.redo_data,
@@ -80,7 +83,24 @@ pub(crate) fn complete(
         (update.redo_names, update.redo_times) = (redo.names, redo.times);
         (update.undo_names, update.undo_times) = (undo.names, undo.times);
     }
-    attributes::resolve(records, page_size);
+}
+
+/// Keep the generic index header, but do not interpret a known view index's key as a filename.
+fn decode_side(
+    operation: Operation,
+    data: &[u8],
+    target: Option<&crate::OpenAttribute>,
+) -> Option<Decoded> {
+    let mut decoded = decoded::decode(operation, data)?;
+    if let Decoded::IndexEntry(entry) = &mut decoded
+        && target.is_some_and(|target| {
+            matches!(target.attribute_type, 0x90 | 0xA0)
+                && target.name.as_deref().is_some_and(|name| name != "$I30")
+        })
+    {
+        entry.file_name = None;
+    }
+    Some(decoded)
 }
 
 /// The size of the file record (or index buffer) an update changes: what

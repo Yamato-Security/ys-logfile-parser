@@ -150,6 +150,9 @@ a Windows GUI, not run). None of their code is here.
 - Non-resident data is decoded only for the USN journal: other `UpdateNonresidentValue` data (such
   as index buffers), the dirty page and transaction table copies, and `UpdateMappingPairs` and
   `SetNewAttributeSizes` data are kept as bytes.
+- Known non-directory index targets suppress filename decoding. When the target cannot be
+  resolved, an index key is interpreted from its layout alone; corroborate those names with the
+  target, raw bytes, and other artifacts.
 - `$STANDARD_INFORMATION` updates are recognised by place (the first attribute of a file record,
   the timestamps' offsets) and by plausible times (1980 to 2200), not by an attribute type, which
   `UpdateResidentValue` doesn't carry.

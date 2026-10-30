@@ -39,6 +39,12 @@ First version of Yamato Security's fork, based on sootmark-ntfslog 0.1.0 (Sootma
   without their names), empty for an unnamed attribute. (@YamatoSecurity)
 
 ### Fixed
+- Known non-directory index targets no longer emit file names when their long keys resemble a
+  `$FILE_NAME` value; the generic index header is retained for redo and undo. (@YamatoSecurity)
+- Index keys are bounded by the declared entry length and cannot consume a child VCN or the
+  following entry; sentinel entries do not emit file names. (@YamatoSecurity)
+- A crafted file-record attribute length no longer overflows on 32-bit targets such as wasm32.
+  The damaged attribute is skipped while retaining the file-record header. (@YamatoSecurity)
 - `$STANDARD_INFORMATION` timestamps written from the middle of one (NTFS logs only the bytes that
   change, so an update can start at byte 1 of a timestamp) were not decoded; the timestamps the
   update covers whole now are. (@YamatoSecurity)

@@ -959,6 +959,82 @@ fn writes_to_the_usn_journal() {
 }
 
 #[test]
+fn known_view_indexes_do_not_emit_file_names_for_long_keys() {
+    let mut log = Log::new(2);
+    let entry = index_entry(77, &file_name(ROOT, "not-a-directory-entry"));
+    log.record(
+        1,
+        40 * PAGE + DATA,
+        1,
+        &opens(0x40, &open_entry(ROOT, 0xA0, false), "$O"),
+    );
+    log.record(
+        1,
+        41 * PAGE + DATA,
+        1,
+        &Spec {
+            redo: 0x0E,
+            redo_data: &entry,
+            undo: 0x0E,
+            undo_data: &entry,
+            target: 0x40,
+            ..Spec::default()
+        }
+        .bytes(),
+    );
+    let parsed = parse(&log.build());
+    let update = parsed
+        .records
+        .iter()
+        .filter_map(|record| record.update())
+        .find(|u| u.redo == Operation::AddIndexEntryAllocation)
+        .unwrap();
+    assert_eq!(update.target.as_ref().unwrap().name.as_deref(), Some("$O"));
+    assert!(
+        update.redo_names.is_empty(),
+        "a view index key is not a $FILE_NAME"
+    );
+    let Some(Decoded::IndexEntry(entry)) = &update.redo_decoded else {
+        panic!("index header was lost");
+    };
+    assert_eq!(entry.file_name, None);
+    assert_eq!(update.undo_names, []);
+    let Some(Decoded::IndexEntry(entry)) = &update.undo_decoded else {
+        panic!("undo index header was lost");
+    };
+    assert_eq!(entry.file_name, None);
+}
+
+#[test]
+fn index_keys_cannot_extend_past_the_declared_entry() {
+    let mut log = Log::new(2);
+    let mut entry = index_entry(77, &file_name(ROOT, "outside-entry"));
+    put(&mut entry, 8, &0x10_u16.to_le_bytes());
+    log.record(1, 40 * PAGE + DATA, 1, &simple(0x0E, &entry));
+    let parsed = parse(&log.build());
+    let update = first_update(&parsed);
+    assert!(
+        update.redo_names.is_empty(),
+        "a key outside the index entry was decoded"
+    );
+}
+
+#[test]
+fn huge_attribute_lengths_are_safe_on_32_bit_targets() {
+    let mut log = Log::new(2);
+    let mut image = file_record("unused");
+    // 0x38 + 0xFFFF_FFF8 overflows usize on wasm32. The malformed attribute must stop the
+    // attribute walk before this addition, while retaining the file record's header.
+    put(&mut image, 0x3C, &0xFFFF_FFF8_u32.to_le_bytes());
+    log.record(1, 40 * PAGE + DATA, 1, &simple(0x02, &image));
+    let parsed = parse(&log.build());
+    let Some(Decoded::FileRecord(record)) = &first_update(&parsed).redo_decoded else {
+        panic!("file header was lost");
+    };
+    assert_eq!(record.attributes, []);
+}
+
+#[test]
 fn windows_7_open_records_get_their_names_from_a_later_table_copy() {
     let mut log = Log::new(1);
     let entry = open_entry(ROOT, 0xA0, true);
