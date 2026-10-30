@@ -12,8 +12,8 @@
 
 use std::collections::BTreeMap;
 
-use common::bytes::Reader;
-use common::text::utf16le_until_nul;
+use crate::bytes::Reader;
+use crate::text::utf16le_until_nul;
 
 use crate::content::Reference;
 use crate::{Operation, Update};
@@ -105,11 +105,10 @@ impl OpenAttributes {
             else {
                 break;
             };
-            if bytes.get(..4) == Some(&ALLOCATED.to_le_bytes()[..]) {
-                if let Some(entry) = entry(bytes, size) {
+            if bytes.get(..4) == Some(&ALLOCATED.to_le_bytes()[..])
+                && let Some(entry) = entry(bytes, size) {
                     self.entries.insert(index, entry);
                 }
-            }
         }
     }
 }

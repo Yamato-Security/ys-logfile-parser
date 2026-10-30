@@ -5,7 +5,7 @@
 //! reader panic.
 
 use ntfslog::{
-    parse, parse_with, Body, Namespace, Operation, Options, ProblemKind, SizeSource, Update,
+    Body, Namespace, Operation, Options, ProblemKind, SizeSource, Update, parse, parse_with,
 };
 use proptest::prelude::*;
 
@@ -62,11 +62,7 @@ impl Log {
     }
 
     fn first_circular(&self) -> usize {
-        if self.major >= 2 {
-            34
-        } else {
-            4
-        }
+        if self.major >= 2 { 34 } else { 4 }
     }
 
     fn lsn(pass: u64, offset: usize) -> u64 {
@@ -344,7 +340,7 @@ fn restart_area() {
     assert_eq!(area.client_free_list, None);
     assert_eq!(area.clients.len(), 1);
     assert_eq!(area.clients[0].name, "NTFS");
-    assert!(parsed.problems.is_empty());
+    assert_eq!(parsed.problems, [] as [ntfslog::Problem; 0]);
 }
 
 #[test]
@@ -414,7 +410,7 @@ fn records_spanning_pages() {
     );
     assert!(parsed.records[0].spans_pages());
     assert_eq!(first_update(&parsed).redo_data, big);
-    assert!(parsed.problems.is_empty());
+    assert_eq!(parsed.problems, [] as [ntfslog::Problem; 0]);
 }
 
 #[test]
@@ -501,7 +497,7 @@ fn without_restart_pages_records_are_still_found() {
     let mut data = log.build();
     data[..2 * PAGE].fill(0);
     let parsed = parse(&data);
-    assert!(parsed.restart_pages.is_empty());
+    assert_eq!(parsed.restart_pages, [] as [ntfslog::RestartPage; 0]);
     let kinds: Vec<_> = parsed.problems.iter().map(|p| p.kind).collect();
     assert_eq!(
         kinds,
@@ -653,7 +649,7 @@ fn names_from_directory_entries_and_attributes() {
     let updates: Vec<&Update> = parsed.records.iter().filter_map(|r| r.update()).collect();
     assert_eq!(updates[0].redo_names[0].name, "notes.txt");
     assert_eq!(updates[0].redo_names[0].file.unwrap().to_string(), "64-1");
-    assert!(updates[1].redo_names.is_empty());
+    assert_eq!(updates[1].redo_names, [] as [ntfslog::FileName; 0]);
     assert_eq!(updates[1].undo_names[0].name, "notes.txt");
     assert_eq!(updates[2].redo_names[0].name, "invoice.pdf.exe");
     assert_eq!(updates[2].redo_names[0].file, None);
@@ -848,7 +844,7 @@ fn real_log() -> Vec<u8> {
     .unwrap();
     let mut data = Vec::new();
     std::io::Read::read_to_end(
-        &mut common::gzip::Decoder::new(compressed.as_slice()),
+        &mut flate2::read::GzDecoder::new(compressed.as_slice()),
         &mut data,
     )
     .unwrap();

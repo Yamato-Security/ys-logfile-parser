@@ -7,7 +7,7 @@ all-features = true
 yanked = "deny"
 
 [licenses]
-# Permissive only, so every Sootmark product can use this crate.
+# Permissive only, so every Yamato Security tool can use this crate.
 allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
 unused-allowed-license = "allow"
 confidence-threshold = 0.9

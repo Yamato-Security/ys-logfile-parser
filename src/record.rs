@@ -1,12 +1,12 @@
 //! Log records: the header every client's record has, and what the NTFS
 //! client puts after it.
 
-use common::bytes::Reader;
+use crate::bytes::Reader;
 
+use crate::Operation;
 use crate::attributes::OpenAttribute;
 use crate::content::{FileName, StandardTimes};
 use crate::walk::Found;
-use crate::Operation;
 
 /// Record types: an update, or a client's restart area (a checkpoint).
 const CLIENT_RECORD: u32 = 1;
@@ -274,7 +274,12 @@ fn checkpoint(data: &[u8]) -> Option<Checkpoint> {
         .seek(BYTES_PER_CLUSTER_AT)
         .ok()
         .and_then(|()| r.u32_le().ok());
-    let [open_attribute_table, attribute_names, dirty_page_table, transaction_table] = tables;
+    let [
+        open_attribute_table,
+        attribute_names,
+        dirty_page_table,
+        transaction_table,
+    ] = tables;
     Some(Checkpoint {
         major_version,
         minor_version,

@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use common::bytes::Reader;
+use crate::bytes::Reader;
 
 use crate::layout::Layout;
 use crate::pages::{Page, Pages};

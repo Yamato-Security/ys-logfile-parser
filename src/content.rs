@@ -13,9 +13,9 @@
 
 use core::fmt;
 
-use common::bytes::Reader;
-use common::text::utf16le;
-use common::time::Ts;
+use crate::bytes::Reader;
+use crate::text::utf16le;
+use crate::time::Filetime;
 
 /// Attribute type codes.
 const STANDARD_INFORMATION: u32 = 0x10;
@@ -109,13 +109,13 @@ pub struct FileName {
     /// Which naming rules the name follows.
     pub namespace: Namespace,
     /// Created (FILETIME, UTC), as recorded with the name.
-    pub created: Ts,
+    pub created: Filetime,
     /// Content last modified.
-    pub modified: Ts,
+    pub modified: Filetime,
     /// File record last changed.
-    pub changed: Ts,
+    pub changed: Filetime,
     /// Last accessed.
-    pub accessed: Ts,
+    pub accessed: Filetime,
     /// Allocated size, in bytes.
     pub allocated_size: u64,
     /// Real size, in bytes.
@@ -156,13 +156,13 @@ impl Namespace {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StandardTimes {
     /// Created (FILETIME, UTC).
-    pub created: Option<Ts>,
+    pub created: Option<Filetime>,
     /// Content last modified.
-    pub modified: Option<Ts>,
+    pub modified: Option<Filetime>,
     /// File record last changed.
-    pub changed: Option<Ts>,
+    pub changed: Option<Filetime>,
     /// Last accessed.
-    pub accessed: Option<Ts>,
+    pub accessed: Option<Filetime>,
 }
 
 /// What one side (redo or undo) of a record says about files.
@@ -282,7 +282,7 @@ fn resident_value(record: &[u8]) -> Option<&[u8]> {
 fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
     let mut r = Reader::new(value);
     let parent = Reference::new(r.u64_le().ok()?);
-    let mut time = || r.u64_le().ok().map(Ts::from_filetime);
+    let mut time = || r.u64_le().ok().map(Filetime::new);
     let (created, modified, changed, accessed) = (time()?, time()?, time()?, time()?);
     let allocated_size = r.u64_le().ok()?;
     let size = r.u64_le().ok()?;
@@ -314,7 +314,7 @@ fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
 /// `$STANDARD_INFORMATION` value: each one it covers whole, when every one
 /// it covers is plausible.
 fn standard_times(data: &[u8], value_offset: usize) -> Option<StandardTimes> {
-    if value_offset >= TIMES_LENGTH || value_offset % 8 != 0 {
+    if value_offset >= TIMES_LENGTH || !value_offset.is_multiple_of(8) {
         return None;
     }
     let mut times = StandardTimes::default();
@@ -332,7 +332,7 @@ fn standard_times(data: &[u8], value_offset: usize) -> Option<StandardTimes> {
         let Some(bytes) = data.get(at..at + 8) else {
             break;
         };
-        let time = Ts::from_filetime(u64::from_le_bytes(bytes.try_into().ok()?));
+        let time = Filetime::new(u64::from_le_bytes(bytes.try_into().ok()?));
         if !time.year_within(PLAUSIBLE_YEARS.0, PLAUSIBLE_YEARS.1) {
             return None;
         }

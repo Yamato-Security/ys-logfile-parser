@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 
-use common::bytes::Reader;
+use crate::bytes::Reader;
 
 use crate::fixup::unprotect;
 use crate::layout::Layout;

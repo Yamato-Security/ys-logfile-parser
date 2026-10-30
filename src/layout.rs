@@ -90,9 +90,9 @@ impl Layout {
             && (MIN_PAGE_SIZE..=MAX_PAGE_SIZE).contains(&self.page_size)
             && (MIN_SEQUENCE_BITS..u64::BITS).contains(&self.sequence_bits)
             && self.header_length >= DEFAULT_HEADER_LENGTH
-            && self.header_length % 8 == 0
+            && self.header_length.is_multiple_of(8)
             && self.data_offset >= PAGE_HEADER
-            && self.data_offset % 8 == 0
+            && self.data_offset.is_multiple_of(8)
             && self.data_offset.saturating_add(self.header_length) <= self.page_size
     }
 
@@ -161,7 +161,7 @@ fn page_count(declared: u64, length: usize, page_size: usize) -> u64 {
 /// The sequence number bits Windows gives a log of `file_size` bytes: what
 /// is left once the offset, in 8-byte units, has the bits it needs.
 pub(crate) fn sequence_bits_for(file_size: u64) -> u32 {
-    let offset_bits = (u64::BITS - file_size.leading_zeros()).max(MIN_SEQUENCE_BITS + 1);
+    let offset_bits = file_size.bit_width().max(MIN_SEQUENCE_BITS + 1);
     u64::BITS + MIN_SEQUENCE_BITS - offset_bits
 }
 

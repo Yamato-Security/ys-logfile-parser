@@ -14,9 +14,8 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use common::hex;
-use common::sha1::Sha1;
-use ntfslog::{parse, Body, LogFile, Update};
+use ntfslog::{Body, LogFile, Update, parse};
+use sha1_smol::Sha1;
 
 fn manifest(path: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
@@ -25,7 +24,7 @@ fn manifest(path: &str) -> std::path::PathBuf {
 fn gunzip(path: &str) -> Vec<u8> {
     let compressed = fs::read(manifest(path)).unwrap();
     let mut data = Vec::new();
-    common::gzip::Decoder::new(compressed.as_slice())
+    flate2::read::GzDecoder::new(compressed.as_slice())
         .read_to_end(&mut data)
         .unwrap();
     data
@@ -54,7 +53,10 @@ fn dash(value: Option<impl ToString>) -> String {
 }
 
 fn digest(data: &[u8]) -> [String; 2] {
-    [data.len().to_string(), hex::encode(&Sha1::digest(data))]
+    [
+        data.len().to_string(),
+        Sha1::from(data).digest().to_string(),
+    ]
 }
 
 fn update_columns(update: &Update) -> Vec<String> {

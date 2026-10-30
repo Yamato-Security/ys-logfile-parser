@@ -53,7 +53,7 @@ pub(crate) fn unprotect(block: &mut [u8]) -> Result<usize, Fixup> {
     let end = offset + 2 * count;
     // The array is one number and one saved pair per stride, and lies in
     // the first stride, before its protected bytes.
-    if block.len() % STRIDE != 0
+    if !block.len().is_multiple_of(STRIDE)
         || strides == 0
         || count != strides + 1
         || offset < MIN_ARRAY_OFFSET
@@ -65,7 +65,7 @@ pub(crate) fn unprotect(block: &mut [u8]) -> Result<usize, Fixup> {
         [block[offset], block[offset + 1]],
         block[offset + 2..end].to_vec(),
     );
-    for (stride, original) in saved.chunks_exact(2).enumerate() {
+    for (stride, original) in saved.as_chunks::<2>().0.iter().enumerate() {
         let last = (stride + 1) * STRIDE - 2;
         if block[last..last + 2] != number {
             return Err(Fixup::Torn(stride));

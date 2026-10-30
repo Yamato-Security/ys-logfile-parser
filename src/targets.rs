@@ -2,7 +2,7 @@
 //! where, which open attribute) and what its data says about files.
 
 use crate::attributes::OpenAttributes;
-use crate::content::{self, first_attribute_offsets, Content};
+use crate::content::{self, Content, first_attribute_offsets};
 use crate::{Body, LogRecord, Operation, Options, SizeSource, Update};
 
 /// The size of a sector, the unit of block offsets and sizes.

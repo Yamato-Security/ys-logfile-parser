@@ -75,6 +75,7 @@
 //! old (undo).
 
 mod attributes;
+mod bytes;
 mod content;
 mod fixup;
 mod layout;
@@ -84,6 +85,8 @@ mod problem;
 mod record;
 mod restart;
 mod targets;
+mod text;
+mod time;
 mod walk;
 
 pub use attributes::OpenAttribute;
@@ -92,6 +95,7 @@ pub use operation::Operation;
 pub use problem::{Problem, ProblemKind};
 pub use record::{Body, Checkpoint, ClientId, LogRecord, TableDump, Update};
 pub use restart::{Client, RestartArea, RestartPage, Version};
+pub use time::Filetime;
 
 use layout::Layout;
 use pages::Pages;

@@ -1,12 +1,15 @@
 [package]
-name = "sootmark-ntfslog"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.80"
-description = "NTFS transaction journal ($LogFile): restart areas, every log record with its redo and undo operations, and the file names and timestamps they carry."
+name = "ys-logfile-parser"
+version = "1.0.0"
+authors = ["Florian Amette", "Zach Mathis (@yamatosecurity)"]
+# Yamato Security's fork of the upstream `sootmark-ntfslog` crate: not published under the upstream name.
+publish = false
+edition = "2024"
+rust-version = "1.99"
+description = "NTFS transaction journal ($LogFile): restart areas, every log record with its redo and undo operations and targets, and what they say about files: FILE records, attributes, directory entries, timestamps and USN journal writes."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Sootmark/ntfslog"
-homepage = "https://sootmark.com"
+repository = "https://github.com/Yamato-Security/ys-logfile-parser"
+homepage = "https://github.com/Yamato-Security/ys-logfile-parser"
 keywords = ["forensics", "dfir", "incident-response", "ntfs", "logfile"]
 # Sources only: test fixtures stay in the repository.
 include = ["/src", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
@@ -15,10 +18,11 @@ include = ["/src", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
 name = "ntfslog"
 
 [dependencies]
-common = { package = "sootmark-common", version = "0.3.7" }
 
 [dev-dependencies]
+flate2 = "1"
 proptest = "1"
+sha1_smol = "1"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -32,7 +36,7 @@ cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 
-# The test journal is 2 MiB once decompressed: an optimised inflater keeps
-# the property tests short.
-[profile.dev.package.sootmark-common]
+# The test logs are 2 MiB once decompressed: an optimised inflater keeps the
+# property tests short.
+[profile.dev.package.miniz_oxide]
 opt-level = 3

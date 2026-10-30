@@ -3,8 +3,8 @@
 
 use core::fmt;
 
-use common::bytes::Reader;
-use common::text::utf16le;
+use crate::bytes::Reader;
+use crate::text::utf16le;
 
 use crate::fixup::unprotect;
 use crate::layout::{MAX_PAGE_SIZE, MIN_PAGE_SIZE};
@@ -295,9 +295,9 @@ mod tests {
     #[test]
     fn unused_restart_pages_are_not_problems() {
         let mut problems = Vec::new();
-        assert!(read(&[0xFF; 8192], &mut problems).is_empty());
-        assert!(problems.is_empty());
-        assert!(read(&[0; 8192], &mut problems).is_empty());
+        assert_eq!(read(&[0xFF; 8192], &mut problems), []);
+        assert_eq!(problems, []);
+        assert_eq!(read(&[0; 8192], &mut problems), []);
         assert_eq!(
             problems.iter().map(|p| p.offset).collect::<Vec<_>>(),
             [0, 4096]

@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use common::time::Ts;
-use ntfslog::{parse, LogFile, Operation, Update};
+use ntfslog::Filetime;
+use ntfslog::{LogFile, Operation, Update, parse};
 
 const RECORD: usize = 1024;
 
@@ -17,7 +17,7 @@ fn gunzip(path: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{path}", env!("CARGO_MANIFEST_DIR"));
     let compressed = std::fs::read(path).unwrap();
     let mut data = Vec::new();
-    common::gzip::Decoder::new(compressed.as_slice())
+    flate2::read::GzDecoder::new(compressed.as_slice())
         .read_to_end(&mut data)
         .unwrap();
     data
@@ -45,13 +45,13 @@ fn mft_record(mft: &[u8], number: u64) -> Vec<u8> {
 }
 
 /// The `$STANDARD_INFORMATION` timestamps of an MFT record.
-fn mft_times(record: &[u8]) -> [Ts; 4] {
+fn mft_times(record: &[u8]) -> [Filetime; 4] {
     let first = usize::from(u16::from_le_bytes([record[0x14], record[0x15]]));
     assert_eq!(record[first..first + 4], 0x10_u32.to_le_bytes());
     let value = first + usize::from(u16::from_le_bytes([record[first + 20], record[first + 21]]));
     std::array::from_fn(|i| {
         let at = value + 8 * i;
-        Ts::from_filetime(u64::from_le_bytes(record[at..at + 8].try_into().unwrap()))
+        Filetime::new(u64::from_le_bytes(record[at..at + 8].try_into().unwrap()))
     })
 }
 
@@ -71,7 +71,7 @@ fn the_restart_area() {
     assert_eq!(restart.area.clients[0].name, "NTFS");
     assert_eq!(restart.area.clients[0].restart_lsn, 1_574_933);
     assert_eq!(log.cluster_size, 1024);
-    assert!(log.problems.is_empty());
+    assert_eq!(log.problems, [] as [ntfslog::Problem; 0]);
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn new_file_records_are_the_mft_records_they_name() {
 #[test]
 fn standard_information_timestamps_land_on_it_and_end_as_the_mft_holds_them() {
     let (log, mft) = (log(), gunzip("go-ntfs/MFT.gz"));
-    let mut last: BTreeMap<u64, [Option<Ts>; 4]> = BTreeMap::new();
+    let mut last: BTreeMap<u64, [Option<Filetime>; 4]> = BTreeMap::new();
     for update in updates(&log) {
         let Some(times) = update.redo_times else {
             continue;
