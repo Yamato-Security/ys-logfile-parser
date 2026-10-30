@@ -1,0 +1,42 @@
+[package]
+name = "ys-logfile-parser"
+version = "1.0.0"
+authors = ["Florian Amette", "Zach Mathis (@yamatosecurity)"]
+# Yamato Security's fork of the upstream `sootmark-ntfslog` crate: not published under the upstream name.
+publish = false
+edition = "2024"
+rust-version = "1.99"
+description = "NTFS transaction journal ($LogFile): restart areas, every log record with its redo and undo operations and targets, and what they say about files: FILE records, attributes, directory entries, timestamps and USN journal writes."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Yamato-Security/ys-logfile-parser"
+homepage = "https://github.com/Yamato-Security/ys-logfile-parser"
+keywords = ["forensics", "dfir", "incident-response", "ntfs", "logfile"]
+# Sources only: test fixtures stay in the repository.
+include = ["/src", "/README.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
+
+[lib]
+name = "ntfslog"
+
+[dependencies]
+
+[dev-dependencies]
+flate2 = "1"
+proptest = "1"
+sha1_smol = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+
+# The test logs are 2 MiB once decompressed: an optimised inflater keeps the
+# property tests short.
+[profile.dev.package.miniz_oxide]
+opt-level = 3

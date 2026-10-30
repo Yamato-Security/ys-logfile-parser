@@ -1,0 +1,12 @@
+LogFile.gz and MFT.gz are the $LogFile and $MFT of dfVFS's NTFS test volume,
+test_data/ntfs.raw, under the Apache License 2.0 (LICENSE, in this
+directory). Copyright the dfVFS authors. The log has never been written (it
+is all 0xFF, as a newly formatted volume's is).
+
+Source: https://github.com/log2timeline/dfvfs, test_data/ntfs.raw, at commit
+917cefc9426d6ded2687d2b55164ded25b44fcb7. Extracted with The Sleuth Kit
+(icat ntfs.raw 2, and 0) and stored gzip-compressed (gzip -9n), otherwise
+unmodified. SHA-256 of the uncompressed files:
+
+  LogFile  f5fb04aa5b882706b9309e885f19477261336ef76a150c3b4d3489dfac3953ec
+  MFT      ef643dc219fbea7eeca9790faa56b400b6427491e1250db9191ce836f42b9930

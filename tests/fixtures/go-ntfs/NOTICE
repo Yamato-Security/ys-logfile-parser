@@ -1,0 +1,11 @@
+LogFile.gz and MFT.gz are the $LogFile and $MFT of go-ntfs's test volume,
+parser/test_data/test.ntfs.dd, under the Apache License 2.0 (LICENSE, in this
+directory). Copyright the go-ntfs authors.
+
+Source: https://github.com/Velocidex/go-ntfs, parser/test_data/test.ntfs.dd,
+at commit 20cc4d33923d64fcb39c03438568ddfa26bf416b. Extracted with The Sleuth
+Kit (icat test.ntfs.dd 2, and 0) and stored gzip-compressed (gzip -9n),
+otherwise unmodified. SHA-256 of the uncompressed files:
+
+  LogFile  60018309e430db675b4e8d5fc208eb2e7f23ec6b0c4bec149da942c20ba2ffd1
+  MFT      e6cc555894d757fcb94ee48a30469b9a0565ed8fe228ebd0fb352fc3c4eb47b7
