@@ -9,6 +9,18 @@ First version of Yamato Security's fork, based on sootmark-ntfslog 0.1.0 (Sootma
   the attribute itself for `OpenNonresidentAttribute` records, and updates written before the record
   that opened their attribute survives (the oldest definition in their stretch of the log).
   `Update::target_inferred` marks a target taken from another stretch. (@YamatoSecurity)
+- `Update::redo_decoded` and `Update::undo_decoded`: what each side of an update holds, decoded
+  (`Decoded`): a `FileRecord` (`InitializeFileRecordSegment`: a new record whole, with its number,
+  sequence number, flags, base record and attributes; or a freed record's header, its sequence
+  number and flags before `DeallocateFileRecordSegment`), an `Attribute` record
+  (`CreateAttribute`, and the undo of `DeleteAttribute`: type, name, form, flags, id, size,
+  `$STANDARD_INFORMATION` and `$FILE_NAME` values), an `IndexEntry` (its `$FILE_NAME` key in a
+  directory index; none in `$O`, `$Q`, `$R`, `$SDH` and `$SII`) and `DuplicatedInformation` (the
+  times, sizes and attributes a directory entry keeps, new and old, from
+  `UpdateFileNameRoot`/`Allocation`). `StandardInformation` has the attributes, owner id, security
+  id, quota and USN too. `FileName::reparse_value`. (@YamatoSecurity)
+- `Update::journal_write`: the bytes an update writes to the USN change journal (`$UsnJrnl:$J`) and
+  their offset in it, for recovering records the journal no longer has. (@YamatoSecurity)
 - `LogRecord::transaction_first_lsn`: the first record of each record's transaction, by following
   previous LSNs. (@YamatoSecurity)
 
@@ -24,6 +36,12 @@ First version of Yamato Security's fork, based on sootmark-ntfslog 0.1.0 (Sootma
   without their names), empty for an unnamed attribute. (@YamatoSecurity)
 
 ### Fixed
+- `$STANDARD_INFORMATION` timestamps written from the middle of one (NTFS logs only the bytes that
+  change, so an update can start at byte 1 of a timestamp) were not decoded; the timestamps the
+  update covers whole now are. (@YamatoSecurity)
+- `$STANDARD_INFORMATION` timestamps outside 1980–2200 in a whole attribute (a new file record or
+  attribute) were dropped; only the bytes of an `UpdateResidentValue`, whose attribute isn't
+  recorded, are checked for plausibility now. (@YamatoSecurity)
 - After a mount, updates took the open attribute table left from before it: a stale attribute, or
   one entry's file with another's name. The table now carries over only within a stretch of the log
   (from one checkpoint without tables to the next, and not across gaps of more than 64 pages).

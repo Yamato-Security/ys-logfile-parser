@@ -6,6 +6,7 @@ use crate::bytes::Reader;
 use crate::Operation;
 use crate::attributes::OpenAttribute;
 use crate::content::{FileName, StandardTimes};
+use crate::decoded::Decoded;
 use crate::walk::Found;
 
 /// Record types: an update, or a client's restart area (a checkpoint).
@@ -17,6 +18,9 @@ const UPDATE_HEADER: usize = 32;
 /// size, when long enough to.
 const CHECKPOINT_HEADER: usize = 64;
 const BYTES_PER_CLUSTER_AT: usize = 80;
+/// The USN journal's records: `$Extend\$UsnJrnl`'s `$DATA` named `$J`.
+const DATA: u32 = 0x80;
+const JOURNAL_STREAM: &str = "$J";
 /// Header flag: the record continues on the next page.
 const MULTI_PAGE: u16 = 0x0001;
 
@@ -145,6 +149,13 @@ pub struct Update {
     /// than the update's (see the crate documentation): no record in its
     /// own says which attribute its table offset was then.
     pub target_inferred: bool,
+    /// The redo data, decoded: the file record, attribute record or index
+    /// entry it writes, or a directory entry's new times and sizes.
+    pub redo_decoded: Option<Decoded>,
+    /// The undo data, decoded: what was there before (the header of a
+    /// freed file record, a deleted attribute or index entry, a directory
+    /// entry's old times and sizes).
+    pub undo_decoded: Option<Decoded>,
     /// The `$FILE_NAME`s the redo data carries: names a file is given (a
     /// new file record, attribute or directory entry).
     pub redo_names: Vec<FileName>,
@@ -156,6 +167,38 @@ pub struct Update {
     /// The `$STANDARD_INFORMATION` timestamps the undo data writes back:
     /// what they were.
     pub undo_times: Option<StandardTimes>,
+}
+
+impl Update {
+    /// What it writes to the USN change journal (`$Extend\$UsnJrnl:$J`):
+    /// an `UpdateNonresidentValue` of a `$DATA` attribute named `$J`. The
+    /// data is whole USN records in the journal's own layout, at their
+    /// offset in `$J`, which is the USN of the first of them. Records the
+    /// journal no longer has (wrapped, or written after a copy of it was
+    /// made) are still here: parse `data` with a USN record parser such as
+    /// ys-usn-journal-parser's and add `offset` to place them.
+    #[must_use]
+    pub fn journal_write(&self) -> Option<JournalWrite<'_>> {
+        let target = self.target.as_ref()?;
+        (self.redo == Operation::UpdateNonresidentValue
+            && target.attribute_type == DATA
+            && target.name.as_deref() == Some(JOURNAL_STREAM)
+            && !self.redo_data.is_empty())
+        .then_some(())?;
+        Some(JournalWrite {
+            offset: self.offset_in_target?,
+            data: &self.redo_data,
+        })
+    }
+}
+
+/// Bytes an update writes to the USN change journal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JournalWrite<'a> {
+    /// Where in `$J` they go.
+    pub offset: u64,
+    /// The bytes.
+    pub data: &'a [u8],
 }
 
 /// The NTFS client's restart area, written to the log at each checkpoint:
@@ -266,6 +309,8 @@ fn update(data: &[u8]) -> Option<Update> {
         offset_in_target: None,
         target: None,
         target_inferred: false,
+        redo_decoded: None,
+        undo_decoded: None,
         redo_names: Vec::new(),
         undo_names: Vec::new(),
         redo_times: None,

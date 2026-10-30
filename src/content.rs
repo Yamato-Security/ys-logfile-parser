@@ -1,33 +1,18 @@
-//! What redo and undo data say about files: names and timestamps.
+//! What redo and undo data say about files, in short: the names they give
+//! or take away, and the `$STANDARD_INFORMATION` timestamps they write.
 //!
-//! Records carry pieces of MFT file records and of directory indexes, in
-//! the layouts those have on disk:
-//!
-//! - a whole file record (`InitializeFileRecordSegment` redo data);
-//! - an attribute record (`CreateAttribute` redo data, `DeleteAttribute`
-//!   undo data);
-//! - a directory index entry, whose key is the `$FILE_NAME` of the file it
-//!   points to (`AddIndexEntry*` redo data, `DeleteIndexEntry*` undo data);
-//! - a few bytes of a resident value (`UpdateResidentValue`), which are
-//!   `$STANDARD_INFORMATION` timestamps when they land on them.
+//! Names and times come from what [`crate::decoded`] decodes (file records,
+//! attribute records, directory index entries), and from a few bytes of a
+//! resident value (`UpdateResidentValue`), which are `$STANDARD_INFORMATION`
+//! timestamps when they land on them.
 
 use core::fmt;
 
 use crate::bytes::Reader;
+use crate::decoded::{Decoded, StandardInformation};
 use crate::text::utf16le;
 use crate::time::Filetime;
 
-/// Attribute type codes.
-const STANDARD_INFORMATION: u32 = 0x10;
-const FILE_NAME: u32 = 0x30;
-const END_OF_ATTRIBUTES: u32 = 0xFFFF_FFFF;
-/// A file record's signature.
-const FILE_RECORD: &[u8; 4] = b"FILE";
-/// Where a file record keeps its sequence number, first attribute and (from
-/// NTFS 3.1) its own number.
-const SEQUENCE_AT: usize = 0x10;
-const FIRST_ATTRIBUTE_AT: usize = 0x14;
-const RECORD_NUMBER_AT: usize = 0x2C;
 /// The NTFS 3.1 file record header, which has the record number, ends here;
 /// NTFS 3.0's ends at `0x2A`.
 const HEADER_31: usize = 0x30;
@@ -35,13 +20,6 @@ const HEADER_30: usize = 0x2A;
 /// A resident attribute record's header: type, length, form, name, flags,
 /// identifier, then the value's length and offset.
 const RESIDENT_HEADER: usize = 0x18;
-const VALUE_LENGTH_AT: usize = 0x10;
-const VALUE_OFFSET_AT: usize = 0x14;
-/// An index entry's header: file reference, lengths, flags.
-const INDEX_ENTRY_HEADER: usize = 0x10;
-const LAST_INDEX_ENTRY: u16 = 0x02;
-/// The fixed part of a `$FILE_NAME` value, before the name.
-const FILE_NAME_HEADER: usize = 0x42;
 /// `$STANDARD_INFORMATION` starts with four timestamps.
 const TIMES_LENGTH: usize = 32;
 /// Timestamps outside these years are not `$STANDARD_INFORMATION`'s.
@@ -122,6 +100,8 @@ pub struct FileName {
     pub size: u64,
     /// The file's attributes (`FILE_ATTRIBUTE_*`).
     pub attributes: u32,
+    /// Its reparse tag, or the size of its extended attributes.
+    pub reparse_value: u32,
 }
 
 /// The namespace of a [`FileName`].
@@ -173,75 +153,29 @@ pub(crate) struct Content {
 }
 
 impl Content {
-    fn add_attribute(&mut self, kind: u32, value: &[u8], file: Option<Reference>) {
-        match kind {
-            STANDARD_INFORMATION => self.times = standard_times(value, 0),
-            FILE_NAME => self.names.extend(file_name(value, file)),
-            _ => {}
-        }
-    }
-}
-
-/// The names and times in a whole file record.
-pub(crate) fn file_record(image: &[u8]) -> Content {
-    let mut content = Content::default();
-    if image.get(..4) != Some(&FILE_RECORD[..]) {
-        return content;
-    }
-    let (Some(sequence), Some(first)) = (
-        u16_at(image, SEQUENCE_AT),
-        u16_at(image, FIRST_ATTRIBUTE_AT),
-    ) else {
-        return content;
-    };
-    let mut at = usize::from(first);
-    let file = if at >= HEADER_31 {
-        u32_at(image, RECORD_NUMBER_AT).map(|number| Reference::from_parts(number.into(), sequence))
-    } else {
-        None
-    };
-    while let (Some(kind), Some(length)) = (u32_at(image, at), u32_at(image, at + 4)) {
-        let length = length as usize;
-        let Some(attribute) = image.get(at..at.saturating_add(length)) else {
-            break;
+    /// The names and times in what one side of an update holds.
+    pub(crate) fn of(decoded: &Decoded) -> Self {
+        let times = |info: &StandardInformation| StandardTimes {
+            created: Some(info.created),
+            modified: Some(info.modified),
+            changed: Some(info.changed),
+            accessed: Some(info.accessed),
         };
-        if kind == END_OF_ATTRIBUTES || length < RESIDENT_HEADER {
-            break;
+        match decoded {
+            Decoded::FileRecord(record) => Self {
+                names: record.file_names().cloned().collect(),
+                times: record.standard_information().map(times),
+            },
+            Decoded::Attribute(attribute) => Self {
+                names: attribute.file_name.iter().cloned().collect(),
+                times: attribute.standard_information.as_ref().map(times),
+            },
+            Decoded::IndexEntry(entry) => Self {
+                names: entry.file_name.iter().cloned().collect(),
+                times: None,
+            },
+            Decoded::DirectoryEntryInfo(_) => Self::default(),
         }
-        if let Some(value) = resident_value(attribute) {
-            content.add_attribute(kind, value, file);
-        }
-        at += length;
-    }
-    content
-}
-
-/// The names and times in one attribute record.
-pub(crate) fn attribute(record: &[u8]) -> Content {
-    let mut content = Content::default();
-    if let (Some(kind), Some(value)) = (u32_at(record, 0), resident_value(record)) {
-        content.add_attribute(kind, value, None);
-    }
-    content
-}
-
-/// The name in a directory index entry: its key, a `$FILE_NAME`.
-pub(crate) fn index_entry(entry: &[u8]) -> Content {
-    let mut r = Reader::new(entry);
-    let parsed = (|| {
-        let file = Reference::new(r.u64_le().ok()?);
-        let _length = r.u16_le().ok()?;
-        let key_length = usize::from(r.u16_le().ok()?);
-        let flags = r.u16_le().ok()?;
-        if flags & LAST_INDEX_ENTRY != 0 || key_length < FILE_NAME_HEADER {
-            return None;
-        }
-        let key = entry.get(INDEX_ENTRY_HEADER..INDEX_ENTRY_HEADER + key_length)?;
-        file_name(key, Some(file))
-    })();
-    Content {
-        names: parsed.into_iter().collect(),
-        times: None,
     }
 }
 
@@ -254,32 +188,8 @@ pub(crate) fn resident_times(data: &[u8], attribute_offset: usize) -> Option<Sta
     standard_times(data, value_offset)
 }
 
-fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
-    let bytes = bytes.get(at..at.checked_add(2)?)?;
-    Some(u16::from_le_bytes([bytes[0], bytes[1]]))
-}
-
-fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let bytes = bytes.get(at..at.checked_add(4)?)?;
-    Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-}
-
-/// The value of a resident attribute record.
-fn resident_value(record: &[u8]) -> Option<&[u8]> {
-    let mut r = Reader::new(record);
-    r.seek(8).ok()?;
-    if r.u8().ok()? != 0 {
-        return None;
-    }
-    r.seek(VALUE_LENGTH_AT).ok()?;
-    let length = usize::try_from(r.u32_le().ok()?).ok()?;
-    r.seek(VALUE_OFFSET_AT).ok()?;
-    let offset = usize::from(r.u16_le().ok()?);
-    record.get(offset..offset.checked_add(length)?)
-}
-
 /// A `$FILE_NAME` value.
-fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
+pub(crate) fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
     let mut r = Reader::new(value);
     let parent = Reference::new(r.u64_le().ok()?);
     let mut time = || r.u64_le().ok().map(Filetime::new);
@@ -287,7 +197,7 @@ fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
     let allocated_size = r.u64_le().ok()?;
     let size = r.u64_le().ok()?;
     let attributes = r.u32_le().ok()?;
-    r.skip(4).ok()?; // extended attributes or reparse tag
+    let reparse_value = r.u32_le().ok()?;
     let length = usize::from(r.u8().ok()?);
     let namespace = Namespace::from_code(r.u8().ok()?);
     if length == 0 {
@@ -307,6 +217,7 @@ fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
         allocated_size,
         size,
         attributes,
+        reparse_value,
     })
 }
 
@@ -314,7 +225,7 @@ fn file_name(value: &[u8], file: Option<Reference>) -> Option<FileName> {
 /// `$STANDARD_INFORMATION` value: each one it covers whole, when every one
 /// it covers is plausible.
 fn standard_times(data: &[u8], value_offset: usize) -> Option<StandardTimes> {
-    if value_offset >= TIMES_LENGTH || !value_offset.is_multiple_of(8) {
+    if value_offset >= TIMES_LENGTH {
         return None;
     }
     let mut times = StandardTimes::default();
@@ -381,5 +292,20 @@ mod tests {
         assert_eq!(resident_times(&data, 0x38), None);
         assert_eq!(resident_times(&[0x41; 16], 0x18), None);
         assert_eq!(resident_times(&data, 0x10), None);
+    }
+
+    #[test]
+    fn timestamp_updates_from_mid_field() {
+        // NTFS logs the bytes that change: here from byte 1 of the created
+        // time, so created is cut and modified and changed are whole.
+        let time = 133_537_680_000_000_000_u64.to_le_bytes();
+        let data = [&time[1..], &time, &time, &time[..3]].concat();
+        let times = resident_times(&data, 0x18 + 1).unwrap();
+        assert_eq!((times.created, times.accessed), (None, None));
+        assert_eq!(
+            times.modified.unwrap().to_iso8601().as_deref(),
+            Some("2024-03-01T12:00:00.0000000Z")
+        );
+        assert_eq!(times.changed, times.modified);
     }
 }

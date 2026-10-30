@@ -3,6 +3,7 @@
 
 use crate::attributes;
 use crate::content::{self, Content, first_attribute_offsets};
+use crate::decoded::{self, Decoded};
 use crate::{Body, LogRecord, Operation, Options, SizeSource, Update};
 
 /// The size of a sector, the unit of block offsets and sizes.
@@ -60,8 +61,22 @@ pub(crate) fn complete(
         };
         let record_size = record_size(update, options);
         locate(update, u64::from(cluster_size), record_size);
-        let redo = decode(update.redo, &update.redo_data, update, record_size);
-        let undo = decode(update.undo, &update.undo_data, update, record_size);
+        update.redo_decoded = decoded::decode(update.redo, &update.redo_data);
+        update.undo_decoded = decoded::decode(update.undo, &update.undo_data);
+        let redo = content(
+            update.redo,
+            &update.redo_data,
+            update.redo_decoded.as_ref(),
+            update,
+            record_size,
+        );
+        let undo = content(
+            update.undo,
+            &update.undo_data,
+            update.undo_decoded.as_ref(),
+            update,
+            record_size,
+        );
         (update.redo_names, update.redo_times) = (redo.names, redo.times);
         (update.undo_names, update.undo_times) = (undo.names, undo.times);
     }
@@ -100,16 +115,19 @@ fn locate(update: &mut Update, cluster_size: u64, record_size: u64) {
     }
 }
 
-/// What data written by `operation` says about files: it has the layout of
-/// what that operation writes.
-fn decode(operation: Operation, data: &[u8], update: &Update, record_size: u64) -> Content {
-    match operation {
-        Operation::InitializeFileRecordSegment => content::file_record(data),
-        Operation::CreateAttribute => content::attribute(data),
-        Operation::AddIndexEntryRoot | Operation::AddIndexEntryAllocation => {
-            content::index_entry(data)
-        }
-        Operation::UpdateResidentValue
+/// What data written by `operation` says about files: what it decodes
+/// to, or for `UpdateResidentValue`, timestamps written over the first
+/// attribute of a file record.
+fn content(
+    operation: Operation,
+    data: &[u8],
+    decoded: Option<&Decoded>,
+    update: &Update,
+    record_size: u64,
+) -> Content {
+    match (operation, decoded) {
+        (_, Some(decoded)) => Content::of(decoded),
+        (Operation::UpdateResidentValue, None)
             if first_attribute_offsets(record_size).contains(&u64::from(update.record_offset)) =>
         {
             Content {

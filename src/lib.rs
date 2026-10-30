@@ -77,6 +77,7 @@
 mod attributes;
 mod bytes;
 mod content;
+mod decoded;
 mod fixup;
 mod layout;
 mod operation;
@@ -91,9 +92,12 @@ mod walk;
 
 pub use attributes::OpenAttribute;
 pub use content::{FileName, Namespace, Reference, StandardTimes};
+pub use decoded::{
+    Attribute, Decoded, DuplicatedInformation, FileRecord, IndexEntry, StandardInformation,
+};
 pub use operation::Operation;
 pub use problem::{Problem, ProblemKind};
-pub use record::{Body, Checkpoint, ClientId, LogRecord, TableDump, Update};
+pub use record::{Body, Checkpoint, ClientId, JournalWrite, LogRecord, TableDump, Update};
 pub use restart::{Client, RestartArea, RestartPage, Version};
 pub use time::Filetime;
 

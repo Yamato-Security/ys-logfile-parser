@@ -5,7 +5,8 @@
 //! reader panic.
 
 use ntfslog::{
-    Body, Namespace, Operation, Options, ProblemKind, SizeSource, Update, parse, parse_with,
+    Body, Decoded, Namespace, Operation, Options, ProblemKind, SizeSource, Update, parse,
+    parse_with,
 };
 use proptest::prelude::*;
 
@@ -593,6 +594,18 @@ fn names_from_new_file_records() {
     let times = update.redo_times.unwrap();
     assert!(times.created.is_some() && times.accessed.is_some());
     assert!(update.undo_names.is_empty() && update.undo_times.is_none());
+    let Some(Decoded::FileRecord(record)) = &update.redo_decoded else {
+        panic!("not decoded: {:?}", update.redo_decoded);
+    };
+    assert_eq!(record.reference().unwrap().to_string(), "64-3");
+    assert!(!record.header_only && !record.in_use() && !record.is_directory());
+    assert_eq!(record.attributes.len(), 2);
+    assert_eq!(record.name().unwrap().name, "evil.exe");
+    let info = record.standard_information().unwrap();
+    assert_eq!((info.created, info.attributes), (name.created, 0));
+    assert_eq!(info.usn, Some(0), "an NTFS 3.0 $STANDARD_INFORMATION");
+    assert_eq!(record.data_size(), None);
+    assert_eq!(update.undo_decoded, None);
 }
 
 #[test]
@@ -653,6 +666,25 @@ fn names_from_directory_entries_and_attributes() {
     assert_eq!(updates[1].undo_names[0].name, "notes.txt");
     assert_eq!(updates[2].redo_names[0].name, "invoice.pdf.exe");
     assert_eq!(updates[2].redo_names[0].file, None);
+    let Some(Decoded::IndexEntry(deleted)) = &updates[1].undo_decoded else {
+        panic!("not decoded: {:?}", updates[1].undo_decoded);
+    };
+    assert_eq!(deleted.file_name.as_ref(), updates[1].undo_names.first());
+    let Some(Decoded::Attribute(created)) = &updates[2].redo_decoded else {
+        panic!("not decoded: {:?}", updates[2].redo_decoded);
+    };
+    assert_eq!(
+        (
+            created.attribute_type,
+            created.resident,
+            created.name.as_str()
+        ),
+        (0x30, true, "")
+    );
+    assert_eq!(
+        created.size,
+        file_name(ROOT, "invoice.pdf.exe").len() as u64
+    );
 }
 
 #[test]
@@ -879,6 +911,51 @@ fn open_attributes_by_stretch_of_the_log() {
             .iter()
             .all(|record| record.transaction_first_lsn == before)
     );
+}
+
+#[test]
+fn writes_to_the_usn_journal() {
+    const JOURNAL: u64 = 0x0002_0000_0000_0040;
+    let mut log = Log::new(2);
+    log.record(
+        1,
+        40 * PAGE + DATA,
+        1,
+        &opens(0x40, &open_entry(JOURNAL, 0x80, false), "$J"),
+    );
+    log.record(
+        1,
+        41 * PAGE + DATA,
+        1,
+        &opens(0x68, &open_entry(JOURNAL, 0x80, false), "$Max"),
+    );
+    let records = [0x41_u8; 0x60];
+    for (page, target) in [(42, 0x40), (43, 0x68)] {
+        log.record(
+            1,
+            page * PAGE + DATA,
+            1,
+            &Spec {
+                redo: 0x08,
+                redo_data: &records,
+                target,
+                vcn: 3,
+                record_offset: 0x100,
+                attribute_offset: 0x20,
+                ..Spec::default()
+            }
+            .bytes(),
+        );
+    }
+    let parsed = parse(&log.build());
+    let writes: Vec<_> = parsed
+        .records
+        .iter()
+        .filter_map(|record| record.update()?.journal_write())
+        .collect();
+    assert_eq!(writes.len(), 1, "not to another stream of the file");
+    assert_eq!(writes[0].offset, 3 * 4096 + 0x120);
+    assert_eq!(writes[0].data, records);
 }
 
 #[test]
