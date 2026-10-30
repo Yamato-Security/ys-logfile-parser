@@ -10,7 +10,7 @@ use crate::walk::Found;
 
 /// Record types: an update, or a client's restart area (a checkpoint).
 const CLIENT_RECORD: u32 = 1;
-const CLIENT_RESTART: u32 = 2;
+pub(crate) const CLIENT_RESTART: u32 = 2;
 /// The NTFS update header, before its LCNs.
 const UPDATE_HEADER: usize = 32;
 /// The NTFS restart area's fixed part, and where it records the cluster
@@ -37,8 +37,14 @@ pub struct LogRecord {
     pub offset: u64,
     /// The client that wrote it.
     pub client: ClientId,
-    /// Its transaction: an offset in the transaction table.
+    /// Its transaction: an offset in the transaction table. Offsets are
+    /// reused: see [`LogRecord::transaction_first_lsn`] to group records.
     pub transaction_id: u32,
+    /// The LSN of its transaction's first record, found by following the
+    /// previous LSNs: its own when it has none. When the chain leads to a
+    /// record no longer in the log, the oldest LSN it names (the
+    /// transaction began before the oldest record that survives).
+    pub transaction_first_lsn: u64,
     /// Header flags: see [`LogRecord::spans_pages`]. Other bits are kept as
     /// found.
     pub flags: u16,
@@ -130,9 +136,15 @@ pub struct Update {
     /// Byte offset of the change in its target: in the file record for
     /// operations on file records; in the attribute for the others.
     pub offset_in_target: Option<u64>,
-    /// The open attribute changed, for operations on non-resident
-    /// attributes, when the log says which it is.
+    /// The open attribute changed, when the log says which it is: `$MFT`'s
+    /// `$DATA` for operations on file records, the attribute itself for
+    /// operations on non-resident attributes. None for transaction,
+    /// checkpoint and no-op records, which have no target.
     pub target: Option<OpenAttribute>,
+    /// Whether [`Update::target`] was taken from another stretch of the log
+    /// than the update's (see the crate documentation): no record in its
+    /// own says which attribute its table offset was then.
+    pub target_inferred: bool,
     /// The `$FILE_NAME`s the redo data carries: names a file is given (a
     /// new file record, attribute or directory entry).
     pub redo_names: Vec<FileName>,
@@ -192,11 +204,29 @@ pub(crate) fn decode(found: Found) -> LogRecord {
         offset: found.offset,
         client: header.client,
         transaction_id: header.transaction_id,
+        transaction_first_lsn: header.lsn,
         flags: header.flags,
         body: body.unwrap_or(Body::Other {
             record_type: header.record_type,
             data: found.data,
         }),
+    }
+}
+
+/// Set every record's [`LogRecord::transaction_first_lsn`]. `records` are
+/// in LSN order, so a record's previous one has been seen when it is there.
+pub(crate) fn group_transactions(records: &mut [LogRecord]) {
+    let mut first: std::collections::HashMap<u64, u64> =
+        std::collections::HashMap::with_capacity(records.len());
+    for record in records {
+        let previous = record.previous_lsn;
+        let start = if previous == 0 || previous >= record.lsn {
+            record.lsn
+        } else {
+            first.get(&previous).copied().unwrap_or(previous)
+        };
+        record.transaction_first_lsn = start;
+        first.insert(record.lsn, start);
     }
 }
 
@@ -235,6 +265,7 @@ fn update(data: &[u8]) -> Option<Update> {
         mft_record: None,
         offset_in_target: None,
         target: None,
+        target_inferred: false,
         redo_names: Vec::new(),
         undo_names: Vec::new(),
         redo_times: None,

@@ -201,7 +201,8 @@ pub fn parse_with(data: &[u8], options: &Options) -> LogFile {
         .map(record::decode)
         .collect();
     let (cluster_size, cluster_size_source) = targets::cluster_size(&records, options);
-    targets::complete(&mut records, cluster_size, options);
+    targets::complete(&mut records, cluster_size, layout.page_size as u64, options);
+    record::group_transactions(&mut records);
     problems.sort_by_key(|problem| problem.offset);
     LogFile {
         restart_pages,

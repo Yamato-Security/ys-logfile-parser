@@ -61,7 +61,12 @@ fn digest(data: &[u8]) -> [String; 2] {
 
 fn update_columns(update: &Update) -> Vec<String> {
     let lcns: Vec<String> = update.lcns.iter().map(ToString::to_string).collect();
-    let target = update.target.as_ref();
+    // dfir_ntfs names the open attribute of operations on non-resident
+    // attributes only.
+    let target = update
+        .target
+        .as_ref()
+        .filter(|_| update.redo.targets_nonresident() || update.undo.targets_nonresident());
     let mut columns = vec![
         update.redo.code().to_string(),
         update.undo.code().to_string(),
@@ -75,7 +80,7 @@ fn update_columns(update: &Update) -> Vec<String> {
             lcns.join(",")
         },
         dash(target.map(|t| t.file.raw())),
-        dash(target.map(|t| t.name.clone())),
+        dash(target.map(|t| t.name.clone().unwrap_or_default())),
     ];
     columns.extend(digest(&update.redo_data));
     columns.extend(digest(&update.undo_data));

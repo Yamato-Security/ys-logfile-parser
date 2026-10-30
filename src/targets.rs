@@ -1,7 +1,7 @@
 //! Working out, in LSN order, what each update changes (which file record,
 //! where, which open attribute) and what its data says about files.
 
-use crate::attributes::OpenAttributes;
+use crate::attributes;
 use crate::content::{self, Content, first_attribute_offsets};
 use crate::{Body, LogRecord, Operation, Options, SizeSource, Update};
 
@@ -47,25 +47,25 @@ fn is_cluster_size(size: u32) -> bool {
     size.is_power_of_two() && (BLOCK as u32..=MAX_CLUSTER_SIZE).contains(&size)
 }
 
-/// Fill in every update's targets and content, reading the records in LSN
-/// order so that each sees the open attribute table as it then was.
-pub(crate) fn complete(records: &mut [LogRecord], cluster_size: u32, options: &Options) {
-    let mut table = OpenAttributes::default();
-    for record in records {
+/// Fill in every update's targets and content.
+pub(crate) fn complete(
+    records: &mut [LogRecord],
+    cluster_size: u32,
+    page_size: u64,
+    options: &Options,
+) {
+    for record in records.iter_mut() {
         let Body::Update(update) = &mut record.body else {
             continue;
         };
-        table.observe(update);
         let record_size = record_size(update, options);
         locate(update, u64::from(cluster_size), record_size);
-        if targets_nonresident(update) {
-            update.target = table.get(update.target_attribute);
-        }
         let redo = decode(update.redo, &update.redo_data, update, record_size);
         let undo = decode(update.undo, &update.undo_data, update, record_size);
         (update.redo_names, update.redo_times) = (redo.names, redo.times);
         (update.undo_names, update.undo_times) = (undo.names, undo.times);
     }
+    attributes::resolve(records, page_size);
 }
 
 /// The size of the file record (or index buffer) an update changes: what

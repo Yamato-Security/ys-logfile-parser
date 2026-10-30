@@ -756,12 +756,165 @@ fn open_attributes_name_nonresident_targets() {
         (
             target.file.to_string(),
             target.attribute_type,
-            target.name.as_str()
+            target.name.as_deref()
         ),
-        ("5-5".to_owned(), 0xA0, "$I30")
+        ("5-5".to_owned(), 0xA0, Some("$I30"))
     );
     assert_eq!(update.mft_record, None);
     assert_eq!(update.offset_in_target, Some(2 * 4096 + 0x58));
+}
+
+/// An open attribute table entry, Windows 8's layout (40 bytes) or
+/// Windows 7's (44).
+fn open_entry(file: u64, kind: u32, windows7: bool) -> Vec<u8> {
+    let (size, file_at, type_at) = if windows7 { (44, 8, 28) } else { (40, 16, 8) };
+    let mut entry = vec![0; size];
+    put(&mut entry, 0, &0xFFFF_FFFF_u32.to_le_bytes());
+    put(&mut entry, file_at, &file.to_le_bytes());
+    put(&mut entry, type_at, &kind.to_le_bytes());
+    entry
+}
+
+/// A checkpoint: the NTFS restart area, naming the records that hold its
+/// copies of the open attribute table and of the names (0 for none: a
+/// mount or a clean dismount).
+fn checkpoint(table: u64, names: u64) -> Vec<u8> {
+    let mut area = vec![0; 88];
+    put(&mut area, 0, &1_u32.to_le_bytes());
+    put(&mut area, 16, &table.to_le_bytes());
+    put(&mut area, 24, &names.to_le_bytes());
+    put(&mut area, 80, &4096_u32.to_le_bytes());
+    area
+}
+
+fn opens(target: u16, entry: &[u8], name: &str) -> Vec<u8> {
+    Spec {
+        redo: 0x1C,
+        redo_data: entry,
+        undo_data: &utf16(name),
+        target,
+        ..Spec::default()
+    }
+    .bytes()
+}
+
+fn writes(redo: u16, target: u16) -> Vec<u8> {
+    Spec {
+        redo,
+        undo: redo,
+        redo_data: &[1; 8],
+        undo_data: &[0; 8],
+        target,
+        ..Spec::default()
+    }
+    .bytes()
+}
+
+#[test]
+fn open_attributes_by_stretch_of_the_log() {
+    const JOURNAL: u64 = 0x0002_0000_0000_0040;
+    let mut log = Log::new(2);
+    let mut page = 40;
+    let mut add = |log: &mut Log, kind: u32, data: &[u8]| {
+        page += 1;
+        log.record(1, page * PAGE + DATA, kind, data)
+    };
+    // Stretch 1: written to before the record that opens it survives.
+    let before = add(&mut log, 1, &writes(0x0E, 0x40));
+    let opened = add(
+        &mut log,
+        1,
+        &opens(0x40, &open_entry(ROOT, 0xA0, false), "$I30"),
+    );
+    add(&mut log, 1, &opens(0x18, &open_entry(0, 0x80, false), ""));
+    let resident = add(&mut log, 1, &writes(0x07, 0x18));
+    add(&mut log, 2, &checkpoint(0, 0));
+    // Stretch 2, after a mount: the same offset is another attribute.
+    let remounted = add(&mut log, 1, &writes(0x08, 0x40));
+    add(
+        &mut log,
+        1,
+        &opens(0x40, &open_entry(JOURNAL, 0x80, false), "$J"),
+    );
+    add(&mut log, 2, &checkpoint(0, 0));
+    // Stretch 3: nothing says what it is.
+    let unknown = add(&mut log, 1, &writes(0x08, 0x40));
+    let committed = add(&mut log, 1, &simple(0x1B, &[]));
+
+    let parsed = parse(&log.build());
+    let update = |lsn: u64| {
+        parsed
+            .records
+            .iter()
+            .find(|record| record.lsn == lsn)
+            .and_then(|record| record.update())
+            .unwrap()
+    };
+    let target = |lsn: u64| {
+        let update = update(lsn);
+        let target = update.target.as_ref().unwrap();
+        (
+            target.file.raw(),
+            target.attribute_type,
+            target.name.clone().unwrap(),
+            update.target_inferred,
+        )
+    };
+    let index = (ROOT, 0xA0, "$I30".to_owned(), false);
+    assert_eq!(
+        target(before),
+        index,
+        "the oldest definition in its stretch"
+    );
+    assert_eq!(target(opened), index, "an open record's own attribute");
+    assert_eq!(target(resident), (0, 0x80, String::new(), false));
+    assert_eq!(update(resident).mft_record, Some(0));
+    assert_eq!(target(remounted), (JOURNAL, 0x80, "$J".to_owned(), false));
+    assert_eq!(target(unknown), (JOURNAL, 0x80, "$J".to_owned(), true));
+    assert_eq!(update(committed).target, None, "no target");
+    // Each record's previous LSN is the one before it here: one transaction.
+    assert!(
+        parsed
+            .records
+            .iter()
+            .all(|record| record.transaction_first_lsn == before)
+    );
+}
+
+#[test]
+fn windows_7_open_records_get_their_names_from_a_later_table_copy() {
+    let mut log = Log::new(1);
+    let entry = open_entry(ROOT, 0xA0, true);
+    let opened = log.record(
+        1,
+        40 * PAGE + DATA,
+        1,
+        &Spec {
+            redo: 0x1C,
+            redo_data: &entry,
+            target: 0x18,
+            ..Spec::default()
+        }
+        .bytes(),
+    );
+    let mut table = vec![0; 24];
+    put(&mut table, 0, &44_u16.to_le_bytes());
+    table.extend(&entry);
+    let table_lsn = log.record(1, 41 * PAGE + DATA, 1, &simple(0x1D, &table));
+    let mut names = 0x18_u16.to_le_bytes().to_vec();
+    names.extend(8_u16.to_le_bytes());
+    names.extend(utf16("$I30"));
+    names.extend([0; 6]);
+    let names_lsn = log.record(1, 42 * PAGE + DATA, 1, &simple(0x1E, &names));
+    log.record(1, 43 * PAGE + DATA, 2, &checkpoint(table_lsn, names_lsn));
+    let parsed = parse(&log.build());
+    let open = parsed
+        .records
+        .iter()
+        .find(|record| record.lsn == opened)
+        .and_then(|record| record.update()?.target.clone())
+        .unwrap();
+    assert_eq!(open.name.as_deref(), Some("$I30"));
 }
 
 /// A log with something of everything.
