@@ -1054,9 +1054,13 @@ proptest! {
     fn damaged_logs(
         flips in proptest::collection::vec((any::<usize>(), any::<u8>()), 1..60),
         cut in any::<usize>(),
-        real in any::<bool>(),
+        which in 0..3_u8,
     ) {
-        let mut data = if real { real_log() } else { mixed() };
+        let mut data = match which {
+            0 => mixed(),
+            1 => real_log("go-ntfs"),
+            _ => real_log("museum-win11"),
+        };
         for (at, byte) in flips {
             let len = data.len();
             data[at % len] = byte;
@@ -1066,10 +1070,10 @@ proptest! {
     }
 }
 
-fn real_log() -> Vec<u8> {
-    let compressed = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/go-ntfs/LogFile.gz"
+fn real_log(source: &str) -> Vec<u8> {
+    let compressed = std::fs::read(format!(
+        "{}/tests/fixtures/{source}/LogFile.gz",
+        env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap();
     let mut data = Vec::new();

@@ -1,0 +1,11 @@
+LogFile.gz is the first 1 MiB of a Windows 11 $LogFile from the DFIR Artifact
+Museum, Windows/NTFSArtifacts/LogFile/Win11/RathbunVM/$LogFile, under the MIT
+License (LICENSE, in this directory). Copyright (c) 2022 DFIR Artifact Museum.
+
+Source: https://github.com/AndrewRathbun/DFIRArtifactMuseum at commit
+7d16ff39c9efc0ddd7307fcb3d30ff5c6e8d99f3. Cut with head -c 1048576 and stored
+gzip-compressed (gzip -9n), otherwise unmodified: the restart pages, the 32
+fast pages and the first 222 pages of the circular area. SHA-256:
+
+  the whole $LogFile (64 MiB)  bc0f1510964b46b57339abd34722c1809e59074512d709d195cd0941c20bd4f4
+  LogFile (the first 1 MiB)    9f2cdf62e013470602e14bcf9b823ca850db8474a856c222c974fdf6225e3ab2

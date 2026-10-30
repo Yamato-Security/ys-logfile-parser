@@ -478,6 +478,20 @@ mod tests {
         assert_eq!(attribute.name, "");
     }
 
+    proptest::proptest! {
+        /// Any bytes, in any of the layouts decoded: never a panic.
+        #[test]
+        fn arbitrary_data(
+            data in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..2048),
+            code in 0x02_u16..0x15,
+        ) {
+            let _ = decode(Operation::from_code(code), &data);
+            let mut record = b"FILE".to_vec();
+            record.extend(&data);
+            let _ = decode(Operation::InitializeFileRecordSegment, &record);
+        }
+    }
+
     #[test]
     fn view_index_keys_are_not_file_names() {
         // A $SII entry: data offset and length, then a 4-byte key.

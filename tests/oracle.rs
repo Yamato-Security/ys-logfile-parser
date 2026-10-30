@@ -194,6 +194,78 @@ fn every_record_as_dfir_ntfs_reads_it() {
 }
 
 #[test]
+fn a_windows_11_log_as_dfir_ntfs_reads_it() {
+    // The first 1 MiB of a 64 MiB log: records cut by the excerpt's end.
+    let log = parse(&gunzip("tests/fixtures/museum-win11/LogFile.gz"));
+    let tsv = fs::read_to_string(manifest("tests/oracle/museum-win11.tsv")).unwrap();
+    let comparison = compare(&log, &tsv);
+    assert_eq!(comparison.same, 4409);
+    // Open attributes dfir_ntfs doesn't name, for records written before
+    // the one that opened theirs survives; and twelve records continued
+    // in pages the excerpt has only as fast page copies, where dfir_ntfs
+    // wraps at the excerpt's end instead: what is read here for them is
+    // what dfir_ntfs reads from the whole 64 MiB log.
+    let wrapped = [
+        354_268_665,
+        354_271_731,
+        354_290_672,
+        354_301_431,
+        354_301_891,
+        354_302_457,
+        354_302_960,
+        354_303_481,
+        354_323_307,
+        354_323_951,
+        354_324_468,
+        354_464_240,
+    ];
+    assert_eq!(comparison.differ.len(), 543);
+    for (lsn, columns) in &comparison.differ {
+        for (column, _, theirs) in columns {
+            assert!(
+                wrapped.contains(lsn) || (matches!(column, 13 | 14) && theirs == "-"),
+                "{lsn}: column {column} differs"
+            );
+        }
+    }
+    // Two records continue past the excerpt's end: dfir_ntfs fills them
+    // from another pass; here they are cut short and reported.
+    assert_eq!(comparison.missing, [352_452_602, 354_269_687]);
+    for lsn in &comparison.missing {
+        let record = log.records.iter().find(|r| r.lsn == *lsn).unwrap();
+        assert!(matches!(record.body, Body::Other { .. }));
+        assert!(log.problems.iter().any(|problem| {
+            problem
+                .to_string()
+                .contains(&format!("record {lsn} cut short"))
+        }));
+    }
+    // Older records, from pages dfir_ntfs doesn't start from.
+    assert_eq!(comparison.extra.len(), 690);
+    // Every USN record written to the journal carries its own offset.
+    let mut journal_records = 0;
+    for write in log
+        .records
+        .iter()
+        .filter_map(|r| r.update()?.journal_write())
+    {
+        let mut at = 0;
+        while let Some(header) = write.data.get(at..at + 8) {
+            let length = u32::from_le_bytes(header[..4].try_into().unwrap()) as usize;
+            let usn = write.data.get(at + 0x18..at + 0x20).unwrap();
+            assert_eq!(header[4..6], [2, 0], "version 2 records");
+            assert_eq!(
+                u64::from_le_bytes(usn.try_into().unwrap()),
+                write.offset + at as u64
+            );
+            journal_records += 1;
+            at += length;
+        }
+    }
+    assert_eq!(journal_records, 503);
+}
+
+#[test]
 fn an_unused_log_as_dfir_ntfs_reads_it() {
     let log = parse(&gunzip("tests/fixtures/dfvfs/LogFile.gz"));
     let tsv = fs::read_to_string(manifest("tests/oracle/dfvfs.tsv")).unwrap();
@@ -228,7 +300,19 @@ fn other_logs_as_dfir_ntfs_reads_them() {
             c.extra.len(),
             log.problems.len(),
         );
-        for (lsn, columns) in c.differ.iter().take(5) {
+        // Targets dfir_ntfs leaves unnamed: records before the one that
+        // opened their attribute, or in a stretch without one.
+        let (unnamed, other): (Vec<_>, Vec<_>) = c.differ.iter().partition(|(_, columns)| {
+            columns
+                .iter()
+                .all(|(column, _, theirs)| matches!(column, 13 | 14) && theirs == "-")
+        });
+        println!(
+            "  differ: {} targets dfir_ntfs doesn't name, {} otherwise",
+            unnamed.len(),
+            other.len()
+        );
+        for (lsn, columns) in other.iter().take(10) {
             println!("  differs {lsn}: {columns:?}");
         }
         println!("  missing {:?}", &c.missing[..c.missing.len().min(10)]);
