@@ -1,0 +1,3 @@
+# U lsn previous undo_next client transaction redo undo target_attribute vcn mft_record offset_in_target lcns target_reference target_name redo_length redo_sha1 undo_length undo_sha1
+# C lsn version checkpoint oat_lsn oat_length names_lsn names_length dirty_lsn dirty_length transactions_lsn transactions_length cluster_size
+# not read: EmptyLogFileException
