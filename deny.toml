@@ -7,8 +7,9 @@ all-features = true
 yanked = "deny"
 
 [licenses]
-# Permissive only, so every Yamato Security tool can use this crate.
-allow = ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+# Dependencies: permissive only, so any Yamato Security tool can use this crate. RPL-1.5 is this
+# crate's own license (LICENSE).
+allow = ["RPL-1.5", "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
 unused-allowed-license = "allow"
 confidence-threshold = 0.9
 

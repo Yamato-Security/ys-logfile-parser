@@ -28,6 +28,11 @@ First version of Yamato Security's fork, based on sootmark-ntfslog 0.1.0 (Sootma
   (@YamatoSecurity)
 
 ### Changed
+- License: ys-logfile-parser is now copyright Shirofune Security Co., Ltd. and released under the
+  Reciprocal Public License 1.5 (RPL-1.5) instead of MIT OR Apache-2.0. Upstream's code stays under
+  MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`). Every Rust file carries the copyright and the
+  RPL License Notice; those changed from upstream also name it, with its copyright and license.
+  (@YamatoSecurity)
 - The crate is named after its repository, `ys-logfile-parser` (its library is still `ntfslog`:
   depend on it as `ntfslog = { package = "ys-logfile-parser", … }`), version 1.0.0, by Florian
   Amette and Zach Mathis (@yamatosecurity), on Rust's 2024 edition, and requires Rust 1.99.
