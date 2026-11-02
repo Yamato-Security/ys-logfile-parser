@@ -1,8 +1,9 @@
 # ys-logfile-parser
 
 Yamato Security's maintained fork of [sootmark-ntfslog](https://github.com/Sootmark/ntfslog), the
-NTFS transaction journal (`$LogFile`) parser for [Juntei](https://github.com/Yamato-Security/juntei).
-The upstream history and the MIT OR Apache-2.0 license are kept.
+NTFS transaction journal (`$LogFile`) parser for
+[Juntei](https://github.com/Yamato-Security/juntei). The upstream history is kept, and its code
+stays under its MIT OR Apache-2.0 license (see [License](#license)).
 
 `$LogFile` holds what NTFS was about to change on a volume, and how to undo it, for the last minutes
 or hours of activity: files and directories created, renamed and deleted, attributes added and
@@ -164,6 +165,12 @@ a Windows GUI, not run). None of their code is here.
 
 ## License
 
-MIT or Apache-2.0, at your option (`LICENSE-MIT`, `LICENSE-APACHE`). The test files are go-ntfs's and
-dfVFS's, under the Apache License 2.0, and the DFIR Artifact Museum's, under the MIT License: see
-the `LICENSE` and `NOTICE` beside each.
+ys-logfile-parser is copyright Shirofune Security Co., Ltd. and released under the [Reciprocal
+Public License 1.5](LICENSE) (RPL-1.5); its source code was published under MIT OR Apache-2.0 before
+version 1.0.0. It is changed from [sootmark-ntfslog](https://github.com/Sootmark/ntfslog) (copyright
+Cyber Experts), whose code stays under the MIT License or the Apache License 2.0 (`LICENSE-MIT`,
+`LICENSE-APACHE`): each Rust file changed from it says so in its header. Its byte, text and time
+helpers are changed from [sootmark-common](https://github.com/Sootmark/common) (copyright Cyber
+Experts), under the same licenses. The test files are go-ntfs's and dfVFS's, under the Apache
+License 2.0, and the DFIR Artifact Museum's, under the MIT License: see the `LICENSE` and `NOTICE`
+beside each.
